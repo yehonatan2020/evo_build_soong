@@ -1243,6 +1243,31 @@ func PathForArbitraryOutput(ctx PathContext, pathComponents ...string) Path {
 	return basePath{path: filepath.Join(ctx.Config().OutDir(), p)}
 }
 
+// PathForSourceRelaxed joins the provided path components.  Unlike PathForSource,
+// the result is allowed to exist outside of the source dir.
+// On error, it will return a usable, but invalid SourcePath, and report a ModuleError.
+func PathForSourceRelaxed(ctx PathContext, pathComponents ...string) SourcePath {
+	path, err := pathForSourceRelaxed(ctx, pathComponents...)
+	if err != nil {
+		reportPathError(ctx, err)
+	}
+
+	if modCtx, ok := ctx.(ModuleContext); ok && ctx.Config().AllowMissingDependencies() {
+		exists, err := existsWithDependencies(modCtx, path)
+		if err != nil {
+			reportPathError(ctx, err)
+		}
+		if !exists {
+			modCtx.AddMissingDependencies([]string{path.String()})
+		}
+	} else if exists, _, err := ctx.Config().fs.Exists(path.String()); err != nil {
+		ReportPathErrorf(ctx, "%s: %s", path, err.Error())
+	} else if !exists {
+		ReportPathErrorf(ctx, "source path %s does not exist", path)
+	}
+	return path
+}
+
 // MaybeExistentPathForSource joins the provided path components and validates that the result
 // neither escapes the source dir nor is in the out dir.
 // It does not validate whether the path exists.
