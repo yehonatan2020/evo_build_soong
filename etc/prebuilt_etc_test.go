@@ -96,7 +96,7 @@ func TestPrebuiltEtcOutputPath(t *testing.T) {
 	`)
 
 	p := result.Module("foo.conf", "android_arm64_armv8-a").(*PrebuiltEtc)
-	android.AssertStringEquals(t, "output file path", "foo.installed.conf", p.outputFilePaths[0].Base())
+	android.AssertStringEquals(t, "output file path", "foo.installed.conf", p.outputFilePath.Base())
 }
 
 func TestPrebuiltEtcGlob(t *testing.T) {
@@ -113,24 +113,10 @@ func TestPrebuiltEtcGlob(t *testing.T) {
 	`)
 
 	p := result.Module("my_foo", "android_arm64_armv8-a").(*PrebuiltEtc)
-	android.AssertStringEquals(t, "my_foo output file path", "my_foo", p.outputFilePaths[0].Base())
+	android.AssertStringEquals(t, "my_foo output file path", "my_foo", p.outputFilePath.Base())
 
 	p = result.Module("my_bar", "android_arm64_armv8-a").(*PrebuiltEtc)
-	android.AssertStringEquals(t, "my_bar output file path", "bar.conf", p.outputFilePaths[0].Base())
-}
-
-func TestPrebuiltEtcMultipleSrcs(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
-		prebuilt_etc {
-			name: "foo",
-			srcs: ["*.conf"],
-		}
-	`)
-
-	p := result.Module("foo", "android_arm64_armv8-a").(*PrebuiltEtc)
-	android.AssertStringEquals(t, "output file path", "bar.conf", p.outputFilePaths[0].Base())
-	android.AssertStringEquals(t, "output file path", "baz.conf", p.outputFilePaths[1].Base())
-	android.AssertStringEquals(t, "output file path", "foo.conf", p.outputFilePaths[2].Base())
+	android.AssertStringEquals(t, "my_bar output file path", "bar.conf", p.outputFilePath.Base())
 }
 
 func TestPrebuiltEtcAndroidMk(t *testing.T) {
@@ -284,62 +270,6 @@ func TestPrebuiltUserShareHostInstallDirPath(t *testing.T) {
 	buildOS := result.Config.BuildOS.String()
 	p := result.Module("foo.conf", buildOS+"_common").(*PrebuiltEtc)
 	expected := filepath.Join("out/soong/host", result.Config.PrebuiltOS(), "usr", "share", "bar")
-	android.AssertPathRelativeToTopEquals(t, "install dir", expected, p.installDirPath)
-}
-
-func TestPrebuiltPrebuiltUserHyphenDataInstallDirPath(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
-	prebuilt_usr_hyphendata {
-			name: "foo.conf",
-			src: "foo.conf",
-			sub_dir: "bar",
-		}
-	`)
-
-	p := result.Module("foo.conf", "android_arm64_armv8-a").(*PrebuiltEtc)
-	expected := "out/soong/target/product/test_device/system/usr/hyphen-data/bar"
-	android.AssertPathRelativeToTopEquals(t, "install dir", expected, p.installDirPath)
-}
-
-func TestPrebuiltPrebuiltUserKeyLayoutInstallDirPath(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
-	prebuilt_usr_keylayout {
-			name: "foo.conf",
-			src: "foo.conf",
-			sub_dir: "bar",
-		}
-	`)
-
-	p := result.Module("foo.conf", "android_arm64_armv8-a").(*PrebuiltEtc)
-	expected := "out/soong/target/product/test_device/system/usr/keylayout/bar"
-	android.AssertPathRelativeToTopEquals(t, "install dir", expected, p.installDirPath)
-}
-
-func TestPrebuiltPrebuiltUserKeyCharsInstallDirPath(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
-	prebuilt_usr_keychars {
-			name: "foo.conf",
-			src: "foo.conf",
-			sub_dir: "bar",
-		}
-	`)
-
-	p := result.Module("foo.conf", "android_arm64_armv8-a").(*PrebuiltEtc)
-	expected := "out/soong/target/product/test_device/system/usr/keychars/bar"
-	android.AssertPathRelativeToTopEquals(t, "install dir", expected, p.installDirPath)
-}
-
-func TestPrebuiltPrebuiltUserIdcInstallDirPath(t *testing.T) {
-	result := prepareForPrebuiltEtcTest.RunTestWithBp(t, `
-	prebuilt_usr_idc {
-			name: "foo.conf",
-			src: "foo.conf",
-			sub_dir: "bar",
-		}
-	`)
-
-	p := result.Module("foo.conf", "android_arm64_armv8-a").(*PrebuiltEtc)
-	expected := "out/soong/target/product/test_device/system/usr/idc/bar"
 	android.AssertPathRelativeToTopEquals(t, "install dir", expected, p.installDirPath)
 }
 

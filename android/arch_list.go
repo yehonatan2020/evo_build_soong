@@ -93,7 +93,6 @@ var cpuVariants = map[ArchType][]string{
 		"exynos-m2",
 	},
 	Arm64: {
-		"cortex-a510",
 		"cortex-a53",
 		"cortex-a55",
 		"cortex-a72",
@@ -102,7 +101,6 @@ var cpuVariants = map[ArchType][]string{
 		"cortex-a76",
 		"kryo",
 		"kryo385",
-		"kryo785",
 		"exynos-m1",
 		"exynos-m2",
 	},

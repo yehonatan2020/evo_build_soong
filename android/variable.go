@@ -79,13 +79,6 @@ type variableProperties struct {
 			Header_libs         []string `android:"arch_variant"`
 		} `android:"arch_variant"`
 
-		Malloc_not_svelte_libc32 struct {
-			Cflags              []string `android:"arch_variant"`
-			Shared_libs         []string `android:"arch_variant"`
-			Whole_static_libs   []string `android:"arch_variant"`
-			Exclude_static_libs []string `android:"arch_variant"`
-		} `android:"arch_variant"`
-
 		Malloc_zero_contents struct {
 			Cflags []string `android:"arch_variant"`
 		} `android:"arch_variant"`
@@ -153,7 +146,6 @@ type variableProperties struct {
 		Eng struct {
 			Cflags   []string
 			Cppflags []string
-			Init_rc  []string
 			Lto      struct {
 				Never *bool
 			}
@@ -286,7 +278,6 @@ type ProductVariables struct {
 	Always_use_prebuilt_sdks     *bool    `json:",omitempty"`
 	Skip_boot_jars_check         *bool    `json:",omitempty"`
 	Malloc_not_svelte            *bool    `json:",omitempty"`
-	Malloc_not_svelte_libc32     *bool    `json:",omitempty"`
 	Malloc_zero_contents         *bool    `json:",omitempty"`
 	Malloc_pattern_fill_contents *bool    `json:",omitempty"`
 	Safestack                    *bool    `json:",omitempty"`
@@ -361,8 +352,6 @@ type ProductVariables struct {
 	Override_rs_driver *string `json:",omitempty"`
 
 	DeviceKernelHeaders []string `json:",omitempty"`
-
-	TargetSpecificHeaderPath *string `json:",omitempty"`
 
 	ExtraVndkVersions []string `json:",omitempty"`
 
@@ -617,7 +606,6 @@ func (v *ProductVariables) SetDefaultConfig() {
 		AAPTPrebuiltDPI:     []string{"xhdpi", "xxhdpi"},
 
 		Malloc_not_svelte:            boolPtr(true),
-		Malloc_not_svelte_libc32:     boolPtr(true),
 		Malloc_zero_contents:         boolPtr(true),
 		Malloc_pattern_fill_contents: boolPtr(false),
 		Safestack:                    boolPtr(false),

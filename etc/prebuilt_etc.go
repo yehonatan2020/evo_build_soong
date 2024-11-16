@@ -57,10 +57,6 @@ func RegisterPrebuiltEtcBuildComponents(ctx android.RegistrationContext) {
 	ctx.RegisterModuleType("prebuilt_root_host", PrebuiltRootHostFactory)
 	ctx.RegisterModuleType("prebuilt_usr_share", PrebuiltUserShareFactory)
 	ctx.RegisterModuleType("prebuilt_usr_share_host", PrebuiltUserShareHostFactory)
-	ctx.RegisterModuleType("prebuilt_usr_hyphendata", PrebuiltUserHyphenDataFactory)
-	ctx.RegisterModuleType("prebuilt_usr_keylayout", PrebuiltUserKeyLayoutFactory)
-	ctx.RegisterModuleType("prebuilt_usr_keychars", PrebuiltUserKeyCharsFactory)
-	ctx.RegisterModuleType("prebuilt_usr_idc", PrebuiltUserIdcFactory)
 	ctx.RegisterModuleType("prebuilt_font", PrebuiltFontFactory)
 	ctx.RegisterModuleType("prebuilt_firmware", PrebuiltFirmwareFactory)
 	ctx.RegisterModuleType("prebuilt_dsp", PrebuiltDSPFactory)
@@ -75,15 +71,10 @@ var PrepareForTestWithPrebuiltEtc = android.FixtureRegisterWithContext(RegisterP
 
 type prebuiltEtcProperties struct {
 	// Source file of this prebuilt. Can reference a genrule type module with the ":module" syntax.
-	// Mutually exclusive with srcs.
 	Src *string `android:"path,arch_variant"`
 
-	// Source files of this prebuilt. Can reference a genrule type module with the ":module" syntax.
-	// Mutually exclusive with src. When used, filename_from_src is set to true.
-	Srcs []string `android:"path,arch_variant"`
-
 	// Optional name for the installed file. If unspecified, name of the module is used as the file
-	// name. Only available when using a single source (src).
+	// name.
 	Filename *string `android:"arch_variant"`
 
 	// When set to true, and filename property is not set, the name for the installed file
@@ -136,9 +127,9 @@ type PrebuiltEtcModule interface {
 	// Returns the sub install directory relative to BaseDir().
 	SubDir() string
 
-	// Returns an android.OutputPath to the intermediate file, which is the renamed prebuilt source
+	// Returns an android.OutputPath to the intermeidate file, which is the renamed prebuilt source
 	// file.
-	OutputFiles(tag string) (android.Paths, error)
+	OutputFile() android.OutputPath
 }
 
 type PrebuiltEtc struct {
@@ -151,8 +142,8 @@ type PrebuiltEtc struct {
 	properties       prebuiltEtcProperties
 	subdirProperties prebuiltSubdirProperties
 
-	sourceFilePaths android.Paths
-	outputFilePaths android.OutputPaths
+	sourceFilePath android.Path
+	outputFilePath android.OutputPath
 	// The base install location, e.g. "etc" for prebuilt_etc, "usr/share" for prebuilt_usr_share.
 	installDirBase               string
 	installDirBase64             string
@@ -255,9 +246,6 @@ func (p *PrebuiltEtc) SetImageVariation(ctx android.BaseModuleContext, variation
 }
 
 func (p *PrebuiltEtc) SourceFilePath(ctx android.ModuleContext) android.Path {
-	if len(p.properties.Srcs) > 0 {
-		panic(fmt.Errorf("SourceFilePath not available on multi-source prebuilt %q", p.Name()))
-	}
 	return android.PathForModuleSrc(ctx, proptools.String(p.properties.Src))
 }
 
@@ -272,10 +260,7 @@ func (p *PrebuiltEtc) SetAdditionalDependencies(paths android.Paths) {
 }
 
 func (p *PrebuiltEtc) OutputFile() android.OutputPath {
-	if len(p.properties.Srcs) > 0 {
-		panic(fmt.Errorf("OutputFile not available on multi-source prebuilt %q", p.Name()))
-	}
-	return p.outputFilePaths[0]
+	return p.outputFilePath
 }
 
 var _ android.OutputFileProducer = (*PrebuiltEtc)(nil)
@@ -283,7 +268,7 @@ var _ android.OutputFileProducer = (*PrebuiltEtc)(nil)
 func (p *PrebuiltEtc) OutputFiles(tag string) (android.Paths, error) {
 	switch tag {
 	case "":
-		return p.outputFilePaths.Paths(), nil
+		return android.Paths{p.outputFilePath}, nil
 	default:
 		return nil, fmt.Errorf("unsupported module reference tag %q", tag)
 	}
@@ -316,7 +301,50 @@ func (p *PrebuiltEtc) ExcludeFromRecoverySnapshot() bool {
 	return false
 }
 
-func (p *PrebuiltEtc) installBaseDir(ctx android.ModuleContext) string {
+func (p *PrebuiltEtc) GenerateAndroidBuildActions(ctx android.ModuleContext) {
+	filename := proptools.String(p.properties.Filename)
+	filenameFromSrc := proptools.Bool(p.properties.Filename_from_src)
+	if p.properties.Src != nil {
+		p.sourceFilePath = android.PathForModuleSrc(ctx, proptools.String(p.properties.Src))
+
+		// Determine the output file basename.
+		// If Filename is set, use the name specified by the property.
+		// If Filename_from_src is set, use the source file name.
+		// Otherwise use the module name.
+		if filename != "" {
+			if filenameFromSrc {
+				ctx.PropertyErrorf("filename_from_src", "filename is set. filename_from_src can't be true")
+				return
+			}
+		} else if filenameFromSrc {
+			filename = p.sourceFilePath.Base()
+		} else {
+			filename = ctx.ModuleName()
+		}
+	} else if ctx.Config().AllowMissingDependencies() {
+		// If no srcs was set and AllowMissingDependencies is enabled then
+		// mark the module as missing dependencies and set a fake source path
+		// and file name.
+		ctx.AddMissingDependencies([]string{"MISSING_PREBUILT_SRC_FILE"})
+		p.sourceFilePath = android.PathForModuleSrc(ctx)
+		if filename == "" {
+			filename = ctx.ModuleName()
+		}
+	} else {
+		ctx.PropertyErrorf("src", "missing prebuilt source file")
+		return
+	}
+
+	if strings.Contains(filename, "/") {
+		ctx.PropertyErrorf("filename", "filename cannot contain separator '/'")
+		return
+	}
+
+	// Check that `sub_dir` and `relative_install_path` are not set at the same time.
+	if p.subdirProperties.Sub_dir != nil && p.subdirProperties.Relative_install_path != nil {
+		ctx.PropertyErrorf("sub_dir", "relative_install_path is set. Cannot set sub_dir")
+	}
+
 	// If soc install dir was specified and SOC specific is set, set the installDirPath to the
 	// specified socInstallDirBase.
 	installBaseDir := p.installDirBase
@@ -329,138 +357,47 @@ func (p *PrebuiltEtc) installBaseDir(ctx android.ModuleContext) string {
 	if p.installAvoidMultilibConflict && !ctx.Host() && ctx.Config().HasMultilibConflict(ctx.Arch().ArchType) {
 		installBaseDir = filepath.Join(installBaseDir, ctx.Arch().ArchType.String())
 	}
-	return installBaseDir
-}
 
-func (p *PrebuiltEtc) GenerateAndroidBuildActions(ctx android.ModuleContext) {
-	var installs []installProperties
+	p.installDirPath = android.PathForModuleInstall(ctx, installBaseDir, p.SubDir())
 
-	if p.properties.Src != nil && len(p.properties.Srcs) > 0 {
-		ctx.PropertyErrorf("src", "src is set. Cannot set srcs")
+	// Call InstallFile even when uninstallable to make the module included in the package
+	ip := installProperties{
+		installable:    p.Installable(),
+		filename:       filename,
+		sourceFilePath: p.sourceFilePath,
+		symlinks:       p.properties.Symlinks,
 	}
-
-	// Check that `sub_dir` and `relative_install_path` are not set at the same time.
-	if p.subdirProperties.Sub_dir != nil && p.subdirProperties.Relative_install_path != nil {
-		ctx.PropertyErrorf("sub_dir", "relative_install_path is set. Cannot set sub_dir")
-	}
-	p.installDirPath = android.PathForModuleInstall(ctx, p.installBaseDir(ctx), p.SubDir())
-
-	filename := proptools.String(p.properties.Filename)
-	filenameFromSrc := proptools.Bool(p.properties.Filename_from_src)
-	if p.properties.Src != nil {
-		p.sourceFilePaths = android.PathsForModuleSrc(ctx, []string{proptools.String(p.properties.Src)})
-		// If the source was not found, set a fake source path to
-		// support AllowMissingDependencies executions.
-		if len(p.sourceFilePaths) == 0 {
-			p.sourceFilePaths = android.Paths{android.PathForModuleSrc(ctx)}
-		}
-
-		// Determine the output file basename.
-		// If Filename is set, use the name specified by the property.
-		// If Filename_from_src is set, use the source file name.
-		// Otherwise use the module name.
-		if filename != "" {
-			if filenameFromSrc {
-				ctx.PropertyErrorf("filename_from_src", "filename is set. filename_from_src can't be true")
-				return
-			}
-		} else if filenameFromSrc {
-			filename = p.sourceFilePaths[0].Base()
-		} else {
-			filename = ctx.ModuleName()
-		}
-		if strings.Contains(filename, "/") {
-			ctx.PropertyErrorf("filename", "filename cannot contain separator '/'")
-			return
-		}
-		p.outputFilePaths = android.OutputPaths{android.PathForModuleOut(ctx, filename).OutputPath}
-
-		ip := installProperties{
-			filename:       filename,
-			sourceFilePath: p.sourceFilePaths[0],
-			outputFilePath: p.outputFilePaths[0],
-			installDirPath: p.installDirPath,
-			symlinks:       p.properties.Symlinks,
-		}
-		installs = append(installs, ip)
-	} else if len(p.properties.Srcs) > 0 {
-		if filename != "" {
-			ctx.PropertyErrorf("filename", "filename cannot be set when using srcs")
-		}
-		if len(p.properties.Symlinks) > 0 {
-			ctx.PropertyErrorf("symlinks", "symlinks cannot be set when using srcs")
-		}
-		if p.properties.Filename_from_src != nil {
-			ctx.PropertyErrorf("filename_from_src", "filename_from_src is implicitly set to true when using srcs")
-		}
-		p.sourceFilePaths = android.PathsForModuleSrc(ctx, p.properties.Srcs)
-		for _, src := range p.sourceFilePaths {
-			filename := src.Base()
-			output := android.PathForModuleOut(ctx, filename).OutputPath
-			ip := installProperties{
-				filename:       filename,
-				sourceFilePath: src,
-				outputFilePath: output,
-				installDirPath: p.installDirPath,
-			}
-			p.outputFilePaths = append(p.outputFilePaths, output)
-			installs = append(installs, ip)
-		}
-	} else if ctx.Config().AllowMissingDependencies() {
-		// If no srcs was set and AllowMissingDependencies is enabled then
-		// mark the module as missing dependencies and set a fake source path
-		// and file name.
-		ctx.AddMissingDependencies([]string{"MISSING_PREBUILT_SRC_FILE"})
-		p.sourceFilePaths = android.Paths{android.PathForModuleSrc(ctx)}
-		if filename == "" {
-			filename = ctx.ModuleName()
-		}
-		p.outputFilePaths = android.OutputPaths{android.PathForModuleOut(ctx, filename).OutputPath}
-		ip := installProperties{
-			filename:       filename,
-			sourceFilePath: p.sourceFilePaths[0],
-			outputFilePath: p.outputFilePaths[0],
-			installDirPath: p.installDirPath,
-		}
-		installs = append(installs, ip)
-	} else {
-		ctx.PropertyErrorf("src", "missing prebuilt source file")
-		return
-	}
-
-	// Call InstallFile even when uninstallable to make the module included in the package.
-	if !p.Installable() {
-		p.SkipInstall()
-	}
-	for _, ip := range installs {
-		ip.addInstallRules(ctx)
-	}
+	p.addInstallRules(ctx, ip)
 	android.CollectDependencyAconfigFiles(ctx, &p.mergedAconfigFiles)
 }
 
 type installProperties struct {
+	installable    bool
 	filename       string
 	sourceFilePath android.Path
-	outputFilePath android.OutputPath
-	installDirPath android.InstallPath
 	symlinks       []string
 }
 
 // utility function to add install rules to the build graph.
 // Reduces code duplication between Soong and Mixed build analysis
-func (ip *installProperties) addInstallRules(ctx android.ModuleContext) {
+func (p *PrebuiltEtc) addInstallRules(ctx android.ModuleContext, ip installProperties) {
+	if !ip.installable {
+		p.SkipInstall()
+	}
+
 	// Copy the file from src to a location in out/ with the correct `filename`
 	// This ensures that outputFilePath has the correct name for others to
 	// use, as the source file may have a different name.
+	p.outputFilePath = android.PathForModuleOut(ctx, ip.filename).OutputPath
 	ctx.Build(pctx, android.BuildParams{
 		Rule:   android.Cp,
-		Output: ip.outputFilePath,
+		Output: p.outputFilePath,
 		Input:  ip.sourceFilePath,
 	})
 
-	installPath := ctx.InstallFile(ip.installDirPath, ip.filename, ip.outputFilePath)
+	installPath := ctx.InstallFile(p.installDirPath, ip.filename, p.outputFilePath)
 	for _, sl := range ip.symlinks {
-		ctx.InstallSymlink(ip.installDirPath, sl, installPath)
+		ctx.InstallSymlink(p.installDirPath, sl, installPath)
 	}
 }
 
@@ -484,15 +421,15 @@ func (p *PrebuiltEtc) AndroidMkEntries() []android.AndroidMkEntries {
 		class = "ETC"
 	}
 
-	return []android.AndroidMkEntries{{
+	return []android.AndroidMkEntries{android.AndroidMkEntries{
 		Class:      class,
 		SubName:    nameSuffix,
-		OutputFile: android.OptionalPathForPath(p.outputFilePaths[0]),
+		OutputFile: android.OptionalPathForPath(p.outputFilePath),
 		ExtraEntries: []android.AndroidMkExtraEntriesFunc{
 			func(ctx android.AndroidMkExtraEntriesContext, entries *android.AndroidMkEntries) {
 				entries.SetString("LOCAL_MODULE_TAGS", "optional")
 				entries.SetString("LOCAL_MODULE_PATH", p.installDirPath.String())
-				entries.SetString("LOCAL_INSTALLED_MODULE_STEM", p.outputFilePaths[0].Base())
+				entries.SetString("LOCAL_INSTALLED_MODULE_STEM", p.outputFilePath.Base())
 				if len(p.properties.Symlinks) > 0 {
 					entries.AddStrings("LOCAL_MODULE_SYMLINKS", p.properties.Symlinks...)
 				}
@@ -611,50 +548,6 @@ func PrebuiltUserShareHostFactory() android.Module {
 	InitPrebuiltEtcModule(module, "usr/share")
 	// This module is host-only
 	android.InitAndroidArchModule(module, android.HostSupported, android.MultilibCommon)
-	android.InitDefaultableModule(module)
-	return module
-}
-
-// prebuilt_usr_hyphendata is for a prebuilt artifact that is installed in
-// <partition>/usr/hyphen-data/<sub_dir> directory.
-func PrebuiltUserHyphenDataFactory() android.Module {
-	module := &PrebuiltEtc{}
-	InitPrebuiltEtcModule(module, "usr/hyphen-data")
-	// This module is device-only
-	android.InitAndroidArchModule(module, android.DeviceSupported, android.MultilibFirst)
-	android.InitDefaultableModule(module)
-	return module
-}
-
-// prebuilt_usr_keylayout is for a prebuilt artifact that is installed in
-// <partition>/usr/keylayout/<sub_dir> directory.
-func PrebuiltUserKeyLayoutFactory() android.Module {
-	module := &PrebuiltEtc{}
-	InitPrebuiltEtcModule(module, "usr/keylayout")
-	// This module is device-only
-	android.InitAndroidArchModule(module, android.DeviceSupported, android.MultilibFirst)
-	android.InitDefaultableModule(module)
-	return module
-}
-
-// prebuilt_usr_keychars is for a prebuilt artifact that is installed in
-// <partition>/usr/keychars/<sub_dir> directory.
-func PrebuiltUserKeyCharsFactory() android.Module {
-	module := &PrebuiltEtc{}
-	InitPrebuiltEtcModule(module, "usr/keychars")
-	// This module is device-only
-	android.InitAndroidArchModule(module, android.DeviceSupported, android.MultilibFirst)
-	android.InitDefaultableModule(module)
-	return module
-}
-
-// prebuilt_usr_idc is for a prebuilt artifact that is installed in
-// <partition>/usr/idc/<sub_dir> directory.
-func PrebuiltUserIdcFactory() android.Module {
-	module := &PrebuiltEtc{}
-	InitPrebuiltEtcModule(module, "usr/idc")
-	// This module is device-only
-	android.InitAndroidArchModule(module, android.DeviceSupported, android.MultilibFirst)
 	android.InitDefaultableModule(module)
 	return module
 }
@@ -807,11 +700,7 @@ func generatePrebuiltSnapshot(s snapshot.SnapshotSingleton, ctx android.Singleto
 		targetArch := "arch-" + m.Target().Arch.ArchType.String()
 
 		snapshotLibOut := filepath.Join(snapshotArchDir, targetArch, "etc", m.BaseModuleName())
-		outputs, _ := m.OutputFiles("")
-		for _, output := range outputs {
-			cp := copyFile(ctx, output, snapshotLibOut, s.Fake)
-			snapshotOutputs = append(snapshotOutputs, cp)
-		}
+		snapshotOutputs = append(snapshotOutputs, copyFile(ctx, m.OutputFile(), snapshotLibOut, s.Fake))
 
 		prop := snapshot.SnapshotJsonFlags{}
 		propOut := snapshotLibOut + ".json"

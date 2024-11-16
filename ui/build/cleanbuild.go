@@ -125,13 +125,11 @@ func installClean(ctx Context, config Config) {
 		hostCommonOut("obj/PACKAGING"),
 		productOut("*.img"),
 		productOut("*.zip"),
-		productOut("*.zip.sha256sum"),
 		productOut("android-info.txt"),
 		productOut("misc_info.txt"),
 		productOut("apex"),
 		productOut("kernel"),
 		productOut("kernel-*"),
-		productOut("recovery_kernel"),
 		productOut("data"),
 		productOut("skin"),
 		productOut("obj/NOTICE_FILES"),
@@ -162,8 +160,7 @@ func installClean(ctx Context, config Config) {
 		productOut("odm_dlkm"),
 		productOut("sysloader"),
 		productOut("testcases"),
-		productOut("symbols"),
-		productOut("install"))
+		productOut("symbols"))
 }
 
 // Since products and build variants (unfortunately) shared the same
@@ -330,11 +327,4 @@ func cleanEmptyDirs(ctx Context, dir string) {
 
 	// Try and delete empty parent directories too.
 	cleanEmptyDirs(ctx, filepath.Dir(dir))
-}
-
-// Remove everything relevant for a clean ota package
-func deviceClean(ctx Context, config Config, what int) {
-	productOutPath := config.ProductOut()
-	removeGlobs(ctx, productOutPath)
-	ctx.Println(productOutPath, "removed.")
 }
